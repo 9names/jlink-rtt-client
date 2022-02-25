@@ -1,0 +1,12 @@
+[package]
+name = "jlink_rtt_client"
+version = "0.1.0"
+edition = "2021"
+authors = ["9names"]
+license = "0BSD"
+license-file = "LICENSE-0BSD.txt"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+memchr = "2.4"
