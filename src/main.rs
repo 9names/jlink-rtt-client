@@ -4,6 +4,7 @@ use std::net::TcpStream;
 
 // Update this to match what your tool says.
 const END_OF_SEGGER_RTT_HEADER: &[u8; 28] = b"Process: JLinkGDBServerCLExe";
+const END_OF_SEGGER_RTT_HEADER2: &[u8; 14] = b"Process: Ozone";
 
 fn main() {
     match TcpStream::connect("localhost:19021") {
@@ -21,7 +22,8 @@ fn main() {
                 let mut read_so_far = 0;
                 // Small buffer to hold all of the header read so far, so we don't miss our
                 // target string if it gets split over two reads
-                let mut headerbuffer: [u8; 1024] = [0; 1024];
+                // Make it a Vec so we can grow it if it needs to be larger
+                let mut headerbuffer: Vec<u8> = Vec::with_capacity(2048);
                 loop {
                     // keep streaming until we find the end of the header
                     match stream.read(&mut buffer) {
@@ -32,12 +34,21 @@ fn main() {
                             // need our slice sizes to match for copy_from_slices
                             // plus this will become the new "start of slice"
                             let end_of_target = read_so_far + size;
+                            // ensure headbuffer is large enough to accept this
+                            if headerbuffer.len() < end_of_target {
+                                headerbuffer.resize(end_of_target, 0);
+                            }
                             let target_slice = &mut headerbuffer[read_so_far..end_of_target];
                             target_slice.copy_from_slice(read);
 
                             // If we found our target string, we're ready to print whatever arrives over RTT
                             let mut found =
                                 memmem::find_iter(&headerbuffer, END_OF_SEGGER_RTT_HEADER);
+                            if found.next().is_some() {
+                                break;
+                            }
+                            let mut found =
+                                memmem::find_iter(&headerbuffer, END_OF_SEGGER_RTT_HEADER2);
                             if found.next().is_some() {
                                 break;
                             }
