@@ -2,10 +2,6 @@ use memchr::memmem;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-// Update this to match what your tool says.
-const END_OF_SEGGER_RTT_HEADER: &[u8; 28] = b"Process: JLinkGDBServerCLExe";
-const END_OF_SEGGER_RTT_HEADER2: &[u8; 14] = b"Process: Ozone";
-
 fn main() {
     match TcpStream::connect("localhost:19021") {
         Ok(mut stream) => {
@@ -24,6 +20,7 @@ fn main() {
                 // target string if it gets split over two reads
                 // Make it a Vec so we can grow it if it needs to be larger
                 let mut headerbuffer: Vec<u8> = Vec::with_capacity(2048);
+                let mut start_of_final_line = None;
                 loop {
                     // keep streaming until we find the end of the header
                     match stream.read(&mut buffer) {
@@ -41,16 +38,24 @@ fn main() {
                             let target_slice = &mut headerbuffer[read_so_far..end_of_target];
                             target_slice.copy_from_slice(read);
 
-                            // If we found our target string, we're ready to print whatever arrives over RTT
-                            let mut found =
-                                memmem::find_iter(&headerbuffer, END_OF_SEGGER_RTT_HEADER);
-                            if found.next().is_some() {
-                                break;
+                            // The last line of the RTT header is which program is exposing the RTT channel
+                            // If we found our target string, we now need to wait until end of line
+                            if start_of_final_line.is_none() {
+                                start_of_final_line =
+                                    memmem::find_iter(&headerbuffer, b"Process: ").next();
                             }
-                            let mut found =
-                                memmem::find_iter(&headerbuffer, END_OF_SEGGER_RTT_HEADER2);
-                            if found.next().is_some() {
-                                break;
+
+                            if let Some(idx) = start_of_final_line {
+                                // If we found our target string, we're now looking for end of line instead.
+                                let end_of_final_line =
+                                    memmem::find_iter(&headerbuffer[idx..], "\n").next();
+                                if let Some(end_idx) = end_of_final_line {
+                                    let program = String::from_utf8_lossy(
+                                        &headerbuffer[idx..(idx + end_idx)],
+                                    );
+                                    eprintln!("Attaching to rtt from {}", program);
+                                    break;
+                                }
                             }
 
                             // update our target buffer
